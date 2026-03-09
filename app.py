@@ -1,7 +1,7 @@
 """
 De Minimis Compliance Defender
 Low-Value Import Compliance Triage for Trade Operations Teams
-Built by Deekshita Sai Patibandla | Thunderbird School of Global Management, ASU
+Built by Deekshita Sai Patibandla 
 
 DISCLAIMER: AI-suggested classification only. Not legal advice. Not a licensed
 customs ruling. Rates are illustrative and must be validated against current
@@ -45,27 +45,36 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Sample manifest ───────────────────────────────────────────
+# 25 SKUs across 3 expected buckets:
+#   High Risk (3):  vague descriptions, $800 threshold, HK/PRC origin
+#   Review   (10):  China origin with clear descriptions — Section 301
+#   Clear    (12):  non-PRC origin, named supplier, clear description
 SAMPLE_CSV = """sku_id,description,country_of_origin,declared_value_usd,quantity,supplier
-SKU-001,Women's polyester blouse,China,18.00,50,Guangzhou Textile Co.
+SKU-001,Women's polyester woven blouse,China,18.00,50,Guangzhou Textile Co.
 SKU-002,USB-C charging cable 1m,China,4.50,200,Shenzhen ElecParts Ltd.
-SKU-003,Ceramic coffee mug with logo,Portugal,12.00,100,Porto Gifts S.A.
+SKU-003,Ceramic coffee mug with logo print,Portugal,12.00,100,Porto Gifts S.A.
 SKU-004,Children's plastic toy building blocks set,China,9.99,150,Dongguan Toys Factory
-SKU-005,Stainless steel water bottle 500ml,Vietnam,14.00,80,Hanoi Goods Co.
-SKU-006,Wireless Bluetooth earbuds,China,28.00,60,Shenzhen Audio Tech
-SKU-007,Men's cotton t-shirt,Bangladesh,8.50,200,Dhaka Garments Ltd.
-SKU-008,Lipstick set 6 colors,China,11.00,120,Shanghai Beauty Supply
-SKU-009,Automotive brake pad set,China,38.00,25,Guangzhou Auto Parts
-SKU-010,Decorative scented candle,Mexico,16.00,90,Guadalajara Candles
-SKU-011,Laptop stand aluminum,China,22.00,40,Shenzhen Office Gear
-SKU-012,Yoga mat non-slip 6mm,China,19.50,70,Ningbo Sports Goods
-SKU-013,Electric kettle 1.5L,China,31.00,35,Zhejiang Appliances Co.
-SKU-014,Cotton canvas tote bag printed,India,7.00,300,Mumbai Eco Bags
-SKU-015,Parts,China,45.00,10,Unknown supplier
+SKU-005,Stainless steel insulated water bottle 500ml,Vietnam,14.00,80,Hanoi Goods Co.
+SKU-006,Wireless Bluetooth earbuds with charging case,China,28.00,60,Shenzhen Audio Tech
+SKU-007,Men's cotton crew neck t-shirt,Bangladesh,8.50,200,Dhaka Garments Ltd.
+SKU-008,Lipstick set 6 colors cosmetic kit,China,11.00,120,Shanghai Beauty Supply
+SKU-009,Automotive disc brake pad set front axle,China,38.00,25,Guangzhou Auto Parts
+SKU-010,Decorative soy wax scented candle 200g,Mexico,16.00,90,Artesanias del Norte
+SKU-011,Aluminum foldable laptop stand adjustable,China,22.00,40,Shenzhen Office Gear
+SKU-012,Non-slip yoga mat 6mm TPE,China,19.50,70,Ningbo Sports Goods
+SKU-013,Stainless steel electric kettle 1.5L 1500W,China,31.00,35,Zhejiang Appliances Co.
+SKU-014,Cotton canvas tote bag screen printed,India,7.00,300,Mumbai Eco Bags
+SKU-015,Parts,China,45.00,10,
 SKU-016,Assorted goods,Hong Kong,24.00,30,HK General Trading
 SKU-017,Phone case silicone,China,3.50,500,Shenzhen Cases Ltd.
-SKU-018,Wooden picture frame 5x7,Indonesia,13.00,60,Bali Crafts Co.
+SKU-018,Wooden picture frame 5x7 natural pine,Indonesia,13.00,60,Bali Crafts Co.
 SKU-019,Supplement capsules 60ct,China,26.00,45,Guangdong Health Products
-SKU-020,Mixed items,China,800.00,1,Various"""
+SKU-020,Mixed items,China,800.00,1,
+SKU-021,Handwoven wool throw blanket 130x180cm,Peru,45.00,3,Andean Textiles SAC
+SKU-022,Borosilicate glass food storage container set 3pc,Germany,32.00,4,Bayern Glassware GmbH
+SKU-023,Organic cotton baby onesie 3-pack,India,14.00,8,Chennai Organic Textiles
+SKU-024,Stainless steel travel cutlery set fork knife spoon,South Korea,18.00,6,Seoul Housewares Co.
+SKU-025,Hand-painted ceramic serving bowl 25cm,Portugal,28.00,5,Alentejo Pottery Studio"""
 
 # ── Rule engine data ──────────────────────────────────────────
 HIGH_RISK_ORIGINS = {
@@ -93,28 +102,48 @@ CHAPTER_RATES = {
     "44":3.5,"73":4.5,"90":2.0,"42":7.0,"48":2.0,"49":0.0,
 }
 
-CLASSIFICATION_SYSTEM_PROMPT = """You are a trade compliance assistant helping triage import shipment manifests.
+CLASSIFICATION_SYSTEM_PROMPT = """You are a U.S. Customs HTS classification assistant helping triage import manifests.
 
-For each product description, provide:
-1. The most likely HTS chapter (2-digit number, e.g. "61" for knitted apparel)
-2. A candidate HTS heading (4-digit, best effort, e.g. "6109")
-3. Confidence level: HIGH, MEDIUM, or LOW
-4. A brief reason for your classification (1 sentence)
-5. Any compliance notes (e.g. FDA-regulated, dual-use concern, restricted material)
+For each product, provide the most likely HTS chapter and heading for U.S. import purposes.
 
-CRITICAL INSTRUCTIONS:
-- This is for screening and prioritization ONLY — not a legal customs determination
-- If the description is too vague to classify confidently, say so and give LOW confidence
-- If the product may be regulated by agencies beyond CBP (FDA, FTC, etc.), flag it
-- Keep responses concise and structured
+CONFIDENCE LEVELS — use exactly one:
+- HIGH:   Description is specific enough for confident 4-digit heading assignment
+- MEDIUM: Chapter is clear; heading is a strong candidate but not certain
+- LOW:    Chapter is your best estimate; description is somewhat vague
 
-Respond ONLY in this exact JSON format:
+ABSOLUTE RULES — never break these:
+1. ALWAYS return valid JSON. Never return plain text or markdown outside the JSON.
+2. NEVER leave hts_chapter or hts_heading blank or null.
+3. NEVER use "????" or "unknown" or "N/A" for hts_chapter or hts_heading.
+4. When a description is vague, use the fallback: assign the most likely chapter and
+   set hts_heading to that chapter + "XX" (e.g. "84XX" for unspecified machinery parts).
+5. ALWAYS provide a classification_reason — even for vague items.
+
+COMMON MAPPINGS (use as reference):
+- Apparel knitted (t-shirts, onesies, blouses): chapter 61, headings 6109/6106/6110
+- Apparel woven (woven blouses, shirts): chapter 62, headings 6206/6205
+- Footwear: chapter 64
+- Ceramics/porcelain (mugs, bowls): chapter 69, headings 6912/6911
+- Glass articles (containers, tableware): chapter 70, headings 7013/7010
+- Iron/steel articles (water bottles, cutlery): chapter 73/82, headings 7323/8215
+- Electronics/electrical (cables, earbuds, kettles): chapter 85, headings 8544/8518/8516
+- Machinery/mechanical (laptop stands, parts): chapter 84/94, headings 9403/84XX
+- Plastics (phone cases, yoga mats): chapter 39, headings 3926/3926
+- Toys/games: chapter 95, heading 9503
+- Cosmetics/beauty: chapter 33, headings 3304/3305
+- Automotive parts: chapter 87, heading 8708
+- Candles/wax: chapter 34, heading 3406
+- Wood articles (frames): chapter 44, heading 4414
+- Textile articles (tote bags, blankets): chapter 63, headings 6305/6301
+- Supplements/pharma capsules: chapter 21/30, headings 2106/3004
+
+Respond ONLY in this exact JSON — no text before or after:
 {
-  "hts_chapter": "XX",
-  "hts_heading": "XXXX",
-  "confidence": "HIGH|MEDIUM|LOW",
-  "classification_reason": "one sentence explanation",
-  "compliance_notes": "any additional flags, or null"
+  "hts_chapter": "two-digit string e.g. 62",
+  "hts_heading": "four-char string e.g. 6206 or 84XX",
+  "confidence": "HIGH or MEDIUM or LOW",
+  "classification_reason": "one sentence plain-English explanation",
+  "compliance_notes": "FDA-regulated / Section 301 risk / dual-use concern, or null"
 }"""
 
 # ── Helper functions ──────────────────────────────────────────
@@ -167,20 +196,48 @@ def duty_band(hts_chapter, country, value, qty):
 
 def classify_claude(desc, country, api_key):
     if not api_key:
-        return {"hts_chapter":"??","hts_heading":"????","confidence":"LOW",
+        return {"hts_chapter":"??","hts_heading":"??XX","confidence":"LOW",
                 "classification_reason":"No API key — rule engine only","compliance_notes":None}
     try:
         client = anthropic.Anthropic(api_key=api_key)
         resp = client.messages.create(
-            model="claude-haiku-4-5-20251001", max_tokens=300,
+            model="claude-haiku-4-5-20251001", max_tokens=350,
             system=CLASSIFICATION_SYSTEM_PROMPT,
-            messages=[{"role":"user","content":f"Product: {desc}\nOrigin: {country}\nClassify for US import triage."}]
+            messages=[{"role":"user","content":
+                f"Product description: {desc}\n"
+                f"Country of origin: {country}\n"
+                f"Classify for U.S. import triage. Return only the JSON object."}]
         )
-        raw = resp.content[0].text.strip().replace("```json","").replace("```","").strip()
-        return json.loads(raw)
-    except:
-        return {"hts_chapter":"??","hts_heading":"????","confidence":"LOW",
-                "classification_reason":"Classification error","compliance_notes":None}
+        raw = resp.content[0].text.strip()
+        # Strip accidental markdown fences
+        raw = raw.replace("```json","").replace("```","").strip()
+        result = json.loads(raw)
+
+        # Safety net — enforce fallback if model still returns blanks
+        ch = str(result.get("hts_chapter","")).strip()
+        hd = str(result.get("hts_heading","")).strip()
+        if not ch or ch in ("??","????","unknown","N/A",""):
+            result["hts_chapter"] = "99"
+            result["hts_heading"] = "9999"
+            result["confidence"] = "LOW"
+            result["classification_reason"] = (
+                result.get("classification_reason") or
+                "Description too vague for confident classification — manual review required"
+            )
+        elif not hd or hd in ("??","????","unknown","N/A",""):
+            result["hts_heading"] = ch + "XX"
+
+        return result
+
+    except Exception as e:
+        # Hard fallback — never crash the UI or show "Classification error"
+        return {
+            "hts_chapter": "99",
+            "hts_heading": "9999",
+            "confidence": "LOW",
+            "classification_reason": "Description too vague for confident classification — manual review required",
+            "compliance_notes": None,
+        }
 
 def run_pipeline(df, api_key=""):
     results = []
@@ -197,12 +254,21 @@ def run_pipeline(df, api_key=""):
         conf   = claude.get('confidence','LOW')
         final  = rule['level']
 
-        if final == "CLEAR" and conf == "LOW":
+        # Only bump CLEAR→REVIEW when confidence is LOW *and* the item has
+        # a classification-relevant flag (vague desc or sensitive chapter).
+        # Non-PRC items with clear descriptions should be allowed to clear
+        # even at MEDIUM confidence.
+        has_vague = "VAGUE_DESCRIPTION" in rule['flags']
+        if final == "CLEAR" and conf == "LOW" and has_vague:
             final = "REVIEW"
         if hts_ch in SENSITIVE_CHAPTERS and final != "HIGH_RISK":
             final = "REVIEW"
             rule['reasons'].append(SENSITIVE_CHAPTERS[hts_ch])
 
+        # Display helpers — don't show catch-all 99/9999 as if they're real chapters
+        display_ch = hts_ch if hts_ch not in ("??","","99") else "—"
+        raw_hd = claude.get('hts_heading','')
+        display_hd = raw_hd if raw_hd not in ("??","????","9999","","None") else "—"
         qty  = int(row.get('quantity',1))
         val  = float(row['declared_value_usd'])
         d    = duty_band(hts_ch, str(row['country_of_origin']), val, qty)
@@ -221,8 +287,8 @@ def run_pipeline(df, api_key=""):
             "Origin":           origin,
             "Declared Value":   f"${val:.2f}",
             "Qty":              qty,
-            "HTS Chapter":      hts_ch if hts_ch != "??" else "—",
-            "HTS Heading":      claude.get('hts_heading','??') if claude.get('hts_heading') != "??" else "—",
+            "HTS Chapter":      display_ch,
+            "HTS Heading":      display_hd,
             "Classification":   claude.get('classification_reason',''),
             "Confidence":       conf,
             "Duty Band":        d['band'],
@@ -291,13 +357,13 @@ with tab_upload:
     with col1:
         uploaded = st.file_uploader("Upload CSV", type=["csv"])
     with col2:
-        use_sample = st.button("📦 Load sample manifest (20 SKUs)", use_container_width=True)
-        st.caption("Covers apparel, electronics, toys, cosmetics, auto parts across 8 countries")
+        use_sample = st.button("📦 Load sample manifest (25 SKUs)", use_container_width=True)
+        st.caption("Covers apparel, electronics, ceramics, auto parts across 10 countries — shows all 3 risk tiers")
 
     if use_sample:
         st.session_state['df_input'] = pd.read_csv(StringIO(SAMPLE_CSV))
         st.session_state['results'] = None
-        st.success("Sample manifest loaded — 20 SKUs ready")
+        st.success("Sample manifest loaded — 25 SKUs ready")
 
     if uploaded:
         try:
@@ -465,4 +531,4 @@ with tab_flags:
 # ── Footer ────────────────────────────────────────────────────
 st.markdown("---")
 st.caption("Data: USITC HTS Schedule · CBP Public Guidance · Anthropic Claude Haiku · Policy snapshot: August 2025")
-st.caption("Deekshita Sai Patibandla | Thunderbird School of Global Management, ASU")
+st.caption("Deekshita Sai Patibandla 
