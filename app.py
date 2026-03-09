@@ -1,7 +1,7 @@
 """
 De Minimis Compliance Defender
 Low-Value Import Compliance Triage for Trade Operations Teams
-Built by Deekshita Sai Patibandla 
+Built by Deekshita Sai Patibandla | Thunderbird School of Global Management, ASU
 
 DISCLAIMER: AI-suggested classification only. Not legal advice. Not a licensed
 customs ruling. Rates are illustrative and must be validated against current
@@ -531,4 +531,4 @@ with tab_flags:
 # ── Footer ────────────────────────────────────────────────────
 st.markdown("---")
 st.caption("Data: USITC HTS Schedule · CBP Public Guidance · Anthropic Claude Haiku · Policy snapshot: August 2025")
-st.caption("Deekshita Sai Patibandla 
+st.caption("Deekshita Sai Patibandla | Thunderbird School of Global Management, ASU")
